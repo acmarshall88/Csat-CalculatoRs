@@ -1,8 +1,8 @@
 ---
 title: "Calculate Csat (fluorescence microscopy)"
-subtitle: "Data = 20210618_sfpqQG"
+subtitle: "Data = 20210716_sfpqQG (plateII rowH)"
 author: "Andrew Marshall"
-date: "15/07/2021"
+date: "16/07/2021"
 output: html_document
 ---
 
@@ -32,7 +32,7 @@ This program:
 ```{r get data}
 ### USER input: ###
 results_dir <- "\\\\uniwa.uwa.edu.au\\userhome\\staff7\\00101127\\My Documents\\LLPS results\\"
-df <- read.csv(paste(results_dir, "20210618_sfpqQG\\20x\\Method#2 (calculate total condensed volume)_CA30.csv", sep = ""))
+df <- read.csv(paste(results_dir, "20210716_sfpqQG\\plateII_H\\Method#2 (calculate total condensed volume)_CA30.csv", sep = ""))
 ```
 
 ### 2. Plot data:
@@ -41,7 +41,7 @@ df <- read.csv(paste(results_dir, "20210618_sfpqQG\\20x\\Method#2 (calculate tot
 library(ggplot2)
 ggplot(data = df, mapping = aes(x = Protein_Conc_uM, y = Cond_Vol_in_sample_nL)) +
    geom_point() +
-   labs(title = "SFPQ(QG)-mEGFP 18/6/2021")
+   labs(title = "SFPQ(QG)-mEGFP 16/7/2021")
 ```
 
 ### 3/4 Do linear fit & calculate saturation concentration ('Csat'):
@@ -49,12 +49,24 @@ ggplot(data = df, mapping = aes(x = Protein_Conc_uM, y = Cond_Vol_in_sample_nL))
 ```{r}
 ### USER INPUT: ###
    # Write an estimate of the Csat here (only data points to the right of this will be used in linear fit):
-   Csat_approx <- 1.7
+   Csat_approx <- 1.75
+
+   # Other points to exclude (e.g. outliers)?:
+      #(must be a vector)
+   excluded <- c(6)
 ### (end user input) ###
 
-# Truncate results table to include only data > Csat...
-rows_to_keep <- df$Protein_Conc_uM > Csat_approx
-df_trunc <- df[rows_to_keep,]
+# Truncate results table to include only data > Csat and exclude any other user-specified points...
+if (length(excluded) >= 1) {
+   df_trunc <- df[-excluded,]
+} else {
+   df_trunc <- df
+}
+   
+rows_to_keep <- df_trunc$Protein_Conc_uM > Csat_approx
+df_trunc <- df_trunc[rows_to_keep,]
+
+
 cond_vol <- df_trunc$Cond_Vol_in_sample_nL
 prot_conc <- as.numeric(df_trunc$Protein_Conc_uM)
 
@@ -67,7 +79,7 @@ yint <- summary(model_linear)$coefficients[1,1]
 
 # (4) Find x-intercept (Csat)...
 # 0 = mx + c ... x = -c/m
-Csat <- round(-yint/slope,1)
+Csat <- round(-yint/slope,2)
 
 plt_Csat <- 
 ggplot(data = df, mapping = aes(x = Protein_Conc_uM, y = Cond_Vol_in_sample_nL)) +
@@ -82,16 +94,16 @@ ggplot(data = df, mapping = aes(x = Protein_Conc_uM, y = Cond_Vol_in_sample_nL))
          axis.title.x = element_text(size = 17),
          axis.title.y = element_text(size = 17)) +
    stat_function(data = df_trunc, fun = function(prot_conc) slope*prot_conc + yint) +
-   ylim(0, max(df$Cond_Vol_in_sample_nL)) +
+   ylim(0, max(df_trunc$Cond_Vol_in_sample_nL)) +
    geom_segment(aes(x = Csat, 
                     y = 0, 
                     xend = Csat,
-                    yend = max(df$Cond_Vol_in_sample_nL)/2),
+                    yend = max(df_trunc$Cond_Vol_in_sample_nL)/2),
                 linetype = "dashed") +
    geom_label(
       label = paste("C(sat) = ", Csat, " uM", sep = ""),
       x = Csat,
-      y = max(df$Cond_Vol_in_sample_nL)/2,
+      y = max(df_trunc$Cond_Vol_in_sample_nL)/2,
       size = 6,
       colour = "darkred") +
    theme(aspect.ratio=0.6)

@@ -1,0 +1,76 @@
+---
+title: "Calculate Csat (centrifuge)"
+subtitle: "Data = 20210715_sfpqQG_150mMKCl"
+author: "Andrew Marshall"
+date: "19/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Overview:
+
+This program:
+
+1. Reads data collected using centrifuge approach for protein saturation concentration determination (supernatant A280 readings) **
+
+2. Converts A280 to [protein] and plots supernatant [protein] over the total protein concentration
+
+3. Fits a horizontal line to points at [protein] > saturation concentration **
+
+4. Calculates saturation concentration (Csat = y-intercept)
+
+
+\*\*Steps 1 and 3 require *user input*. 
+
+### 1. Get data:
+
+```{r get data}
+### USER input: ###
+   # protein extinction coefficient:
+   extcoeff <- 0.481
+   extcoeff_units <- "L/g"
+   
+   # protein molecular weight (Da):
+   MW <- 103329.03
+   
+   # path to data (csv file):
+   results_dir <- "\\\\uniwa.uwa.edu.au\\userhome\\staff7\\00101127\\My Documents\\LLPS results\\centrifuge_assays\\"
+   results_data <- "20210715_sfpqQG_150mMKCl.csv"
+   
+   # Data points to exclude (e.g. pipetting errors)?:
+      #(must be a vector)
+   excluded <- c(13)
+   
+### (end user input) ###
+
+# Reads in data: 
+df <- read.csv(paste(results_dir, results_data, sep = ""))
+
+# Excludes points from data (user-specified... e.g. known pipetting errors):
+if (length(excluded) >= 1) {
+   df_trunc <- df[-excluded,]
+} else {
+   df_trunc <- df
+}
+   
+# Converts A280 to [protein] (micromolar):
+sn_protein_gL <- df_trunc$A280/extcoeff
+sn_protein_uM <- sn_protein_gL/MW*10^6
+df_trunc$sn_protein_uM <- sn_protein_uM
+
+```
+
+### 2. Plot data:
+```{r}
+library(ggplot2)
+
+ggplot(data = df_trunc, mapping = aes(x = sample_uM, y = sn_protein_uM)) +
+   geom_point() +
+   labs(title = "20210715_sfpqQG_(150mM KCl)")
+```
+
+### Conclusions...
+Need to go to higher [protein]

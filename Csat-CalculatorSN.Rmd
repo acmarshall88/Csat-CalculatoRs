@@ -1,8 +1,8 @@
 ---
 title: "Calculate Csat (centrifuge)"
-subtitle: "Data = 20210715_sfpqQG_150mMKCl"
+subtitle: "Data = sfpqQG_CsatSN_data.csv"
 author: "Andrew Marshall"
-date: "19/07/2021"
+date: "04/08/2021"
 output: html_document
 ---
 
@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 This program:
 
-1. Reads data collected using centrifuge approach for protein saturation concentration determination (supernatant A280 readings) **
+1. Reads data collected using centrifuge method for protein saturation concentration determination (supernatant A280 readings) **
 
 2. Converts A280 to [protein] and plots supernatant [protein] over the total protein concentration
 
@@ -38,11 +38,11 @@ This program:
    
    # path to data (csv file):
    results_dir <- "\\\\uniwa.uwa.edu.au\\userhome\\staff7\\00101127\\My Documents\\LLPS results\\centrifuge_assays\\"
-   results_data <- "20210715_sfpqQG_150mMKCl.csv"
+   results_data <- "sfpqQG_CsatSN_data.csv"
    
    # Data points to exclude (e.g. pipetting errors)?:
       #(must be a vector)
-   excluded <- c(13)
+   excluded <- c()
    
 ### (end user input) ###
 
@@ -55,11 +55,25 @@ if (length(excluded) >= 1) {
 } else {
    df_trunc <- df
 }
-   
+
+# Sort by KCl concentration and convert KCl_mM to factor:
+df_trunc <- df_trunc[order(df_trunc$KCl_mM),]
+df_trunc$KCl_mM <- as.factor(df_trunc$KCl_mM)
+
 # Converts A280 to [protein] (micromolar):
 sn_protein_gL <- df_trunc$A280/extcoeff
 sn_protein_uM <- sn_protein_gL/MW*10^6
 df_trunc$sn_protein_uM <- sn_protein_uM
+
+# # Split data into different KCl concentrations:
+# KCl500 <- df_trunc$KCl_mM == 500
+# KCl500 <- df_trunc[KCl500,]
+# KCl150 <- df_trunc$KCl_mM == 150
+# KCl150 <- df_trunc[KCl150,]
+# KCl100 <- df_trunc$KCl_mM == 100
+# KCl100 <- df_trunc[KCl100,]
+# KCl075 <- df_trunc$KCl_mM == 75
+# KCl075 <- df_trunc[KCl075,]
 
 ```
 
@@ -67,10 +81,124 @@ df_trunc$sn_protein_uM <- sn_protein_uM
 ```{r}
 library(ggplot2)
 
-ggplot(data = df_trunc, mapping = aes(x = sample_uM, y = sn_protein_uM)) +
+ggplot(data = df_trunc, mapping = aes(x = sample_uM, y = sn_protein_uM, shape = KCl_mM)) +
    geom_point() +
-   labs(title = "20210715_sfpqQG_(150mM KCl)")
+   geom_smooth(method = "lm", formula = y ~ x) +
+   xlim(0, 35) +
+   ylim(0, 28)
+
+# ggplot(data = KCl500, mapping = aes(x = sample_uM, y = sn_protein_uM)) +
+#    geom_point() +
+#    geom_point(data=KCl150, colour='blue') +
+#    geom_point(data=KCl100, colour='green') +
+#    geom_point(data=KCl075, colour='red') +
+#    labs(title = "sfpqQG") +
+#    xlim(0, 35) +
+#    ylim(0, 28)
 ```
 
+### Data Correction
+```{r}
+# Rationale: all input sample concentrations ('sample_uM') are calculated using 
+# stock concentration divided by dilution factor. Stock concentration is very
+# high and liable to be in error as it is in the high range of the nanodrop
+# detection limit... this is likely to explain any deviation from 1.0 in 
+# slope of protein dilution series in storage (high salt) buffer...
+
+# Remove data points outside of concentration range of interest:
+trimmer <- df_trunc$sample_uM < 15
+df_trunc2 <- df_trunc[trimmer,]
+
+# Fit straight line to 500mM data (slope should equal 1:
+KCl500 <- df_trunc2$KCl_mM == 500
+KCl500 <- df_trunc2[KCl500,]
+
+lm500 <- lm(data = KCl500, formula = sn_protein_uM ~ sample_uM + 0)
+slope500 <- lm500$coefficients[1]
+
+# Multiply all sample_uM data by the slope of the fit to 500mM data (this should be 1)
+df_trunc2$sample_uM_corrected <- df_trunc2$sample_uM*slope500
+
+
+```
+
+
+### 4. Plot Corrected data:
+```{r}
+library(ggplot2)
+
+ggplot(data = df_trunc2, mapping = aes(x = sample_uM_corrected, y = sn_protein_uM, shape = KCl_mM)) +
+   geom_point() +
+   geom_smooth(method = "lm", formula = y ~ x+0) +
+   xlim(0, 35) +
+   ylim(0, 28)
+
+```
+### Calculate Csat for each [KCl] and indicate on plot:
+```{r}
+# Get all 500mM KCl data:
+get500 <- df_trunc2$KCl_mM == 500
+df_trunc2_500 <- df_trunc2[get500,]
+
+
+# For datapoints with sample_uM_corrected > estimated Csat, calculate average 
+# of all sn_protein_uM values (grouped by [KCl]):
+get150overCsat <- df_trunc2$KCl_mM == 150 & df_trunc2$sample_uM_corrected > 10
+df_trunc2_150overCsat <- df_trunc2[get150overCsat,]
+Csat150 <- mean(df_trunc2_150overCsat$sn_protein_uM)
+
+get100overCsat <- df_trunc2$KCl_mM == 100 & df_trunc2$sample_uM_corrected > 3
+df_trunc2_100overCsat <- df_trunc2[get100overCsat,]
+Csat100 <- mean(df_trunc2_100overCsat$sn_protein_uM)
+
+get075overCsat <- df_trunc2$KCl_mM == 75 & df_trunc2$sample_uM_corrected > 1
+df_trunc2_075overCsat <- df_trunc2[get075overCsat,]
+Csat075 <- mean(df_trunc2_075overCsat$sn_protein_uM)
+
+
+# library(dplyr)
+
+ggplot(data = df_trunc2, mapping = aes(x = sample_uM_corrected, y = sn_protein_uM, shape = KCl_mM)) +
+   geom_point() +
+   geom_smooth(data = df_trunc2_500, method = "lm", formula = y ~ x+0, se = FALSE) +
+   geom_hline(yintercept = Csat150, linetype = "dashed") +
+   geom_hline(yintercept = Csat100, linetype = "dashed") +
+   geom_hline(yintercept = Csat075, linetype = "dashed") +
+   xlim(0, 35) +
+   ylim(0, 28)
+
+```
+
+### Plot only 100mM and 500mM (control) data: 
+```{r}
+get100 <- df_trunc2$KCl_mM == 100
+df_trunc2_100 <- df_trunc2[get100,]
+
+# Convert Csat100 to string:
+Csat100chr <- paste(round(Csat100, digits = 1), "\u03bcM")
+
+ggplot(data = rbind(df_trunc2_500, df_trunc2_100), mapping = aes(x = sample_uM_corrected, y = sn_protein_uM, group = KCl_mM)) +
+   labs(title = expression(SFPQ(QG)~italic(C)[sat]~by~centrifugation)) +
+   xlab("total [protein] (\u03bcM)") +
+   ylab("supernatant [protein] (\u03bcM)") +
+   scale_x_continuous(expand = c(0, 0.1)) + 
+   scale_y_continuous(expand = c(0, 0.1)) +
+   geom_point(aes(shape = KCl_mM), size = 2) +
+   scale_shape_manual(values=c(1, 16),
+                      name = "[KCl] (mM)") +
+   geom_smooth(data = df_trunc2_500, method = "lm", formula = y ~ x+0, se = FALSE, colour = "black") +
+   geom_segment(aes(x = 0, xend = max(df_trunc2_100$sample_uM_corrected), y = Csat100, yend = Csat100), linetype = "dashed") +
+   annotate(
+      "text",
+      x = max(df_trunc2$sample_uM_corrected)*0.85,
+      y = Csat100*0.7,
+      size = 4,
+      label = as.expression(bquote(bold(bolditalic(C)[sat] == .(Csat100chr))))) +
+   theme_classic()
+   
+```
+
+
+
 ### Conclusions...
-Need to go to higher [protein]
+

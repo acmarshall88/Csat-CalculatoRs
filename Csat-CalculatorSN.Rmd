@@ -146,14 +146,17 @@ df_trunc2_500 <- df_trunc2[get500,]
 get150overCsat <- df_trunc2$KCl_mM == 150 & df_trunc2$sample_uM_corrected > 10
 df_trunc2_150overCsat <- df_trunc2[get150overCsat,]
 Csat150 <- mean(df_trunc2_150overCsat$sn_protein_uM)
+Csat150sd <- sd(df_trunc2_150overCsat$sn_protein_uM)
 
 get100overCsat <- df_trunc2$KCl_mM == 100 & df_trunc2$sample_uM_corrected > 3
 df_trunc2_100overCsat <- df_trunc2[get100overCsat,]
 Csat100 <- mean(df_trunc2_100overCsat$sn_protein_uM)
+Csat100sd <- sd(df_trunc2_100overCsat$sn_protein_uM)
 
 get075overCsat <- df_trunc2$KCl_mM == 75 & df_trunc2$sample_uM_corrected > 1
 df_trunc2_075overCsat <- df_trunc2[get075overCsat,]
 Csat075 <- mean(df_trunc2_075overCsat$sn_protein_uM)
+Csat075sd <- sd(df_trunc2_075overCsat$sn_protein_uM)
 
 
 # library(dplyr)
@@ -175,7 +178,7 @@ get100 <- df_trunc2$KCl_mM == 100
 df_trunc2_100 <- df_trunc2[get100,]
 
 # Convert Csat100 to string:
-Csat100chr <- paste(round(Csat100, digits = 1), "\u03bcM")
+Csat100chr <- paste(round(Csat100, digits = 1), "\u00b1", round(Csat100sd, digits = 1), "\u03bcM")
 
 ggplot(data = rbind(df_trunc2_500, df_trunc2_100), mapping = aes(x = sample_uM_corrected, y = sn_protein_uM, group = KCl_mM)) +
    labs(title = expression(SFPQ(QG)~italic(C)[sat]~by~centrifugation)) +
@@ -183,19 +186,44 @@ ggplot(data = rbind(df_trunc2_500, df_trunc2_100), mapping = aes(x = sample_uM_c
    ylab("supernatant [protein] (\u03bcM)") +
    scale_x_continuous(expand = c(0, 0.1)) + 
    scale_y_continuous(expand = c(0, 0.1)) +
-   geom_point(aes(shape = KCl_mM), size = 2) +
+   geom_point(aes(shape = KCl_mM), size = 1.5) +
    scale_shape_manual(values=c(1, 16),
                       name = "[KCl] (mM)") +
-   geom_smooth(data = df_trunc2_500, method = "lm", formula = y ~ x+0, se = FALSE, colour = "black") +
+   geom_smooth(data = df_trunc2_500, method = "lm", formula = y ~ x+0, se = FALSE, colour = "black", size = 0.5) +
    geom_segment(aes(x = 0, xend = max(df_trunc2_100$sample_uM_corrected), y = Csat100, yend = Csat100), linetype = "dashed") +
    annotate(
       "text",
-      x = max(df_trunc2$sample_uM_corrected)*0.85,
-      y = Csat100*0.7,
-      size = 4,
+      x = max(df_trunc2$sample_uM_corrected)*0.8,
+      y = Csat100*0.6,
+      size = 3,
       label = as.expression(bquote(bold(bolditalic(C)[sat] == .(Csat100chr))))) +
-   theme_classic()
+   theme_classic(base_size = 9) +
+   theme(legend.key.size = unit(4, "mm"),
+         legend.title = element_text(size = 7),
+         legend.text = element_text(size = 6),
+         legend.position = c(0.15,0.85),
+         aspect.ratio = 1,
+         )
+
+
    
+```
+
+
+
+### Save plot to file:
+```{r}
+ggsave(filename = "sfpqQG_CsatSN_100mM_Rplot8x5_300.png", 
+       plot = last_plot(), 
+       device = "png", 
+       path = results_dir, 
+       scale = 1,
+       width = 8,
+       height = 8,
+       units = "cm",
+       dpi = 300,
+       limitsize = TRUE,
+       bg = NULL)
 ```
 
 

@@ -1,8 +1,8 @@
 ---
 title: "Calculate Csat (centrifuge)"
-subtitle: "Data = sfpqQG_CsatSN_data.csv"
+subtitle: "Data = sfpqWT_CsatSN_data.csv"
 author: "Andrew Marshall"
-date: "04/08/2021"
+date: "25/08/2021"
 output: html_document
 ---
 
@@ -14,38 +14,48 @@ knitr::opts_chunk$set(echo = TRUE)
 
 This program:
 
-1. Reads data collected using centrifuge method for protein saturation concentration determination (supernatant A280 readings) **
+1. Reads data collected using centrifuge method for protein saturation 
+concentration determination. Converts supernatant A280 readings to [protein]. **
 
-2. Converts A280 to [protein] and plots supernatant [protein] over the total protein concentration
+2. Plots supernatant [protein] over the total protein concentration.
 
-3. Fits a horizontal line to points at [protein] > saturation concentration **
+3. Adjusts [protein] values (within user-defined concentration range of interest)
+to correct for non-linearity in nanodrop A280 readings. **
 
-4. Calculates saturation concentration (Csat = y-intercept)
+4. Calculates saturation concentration (Csat) by taking mean supernatant [protein] 
+of points with total [protein] greater than user-estimated Csat. **
+
+5. Plots horizontal line(s) to indicate Csat.
 
 
-\*\*Steps 1 and 3 require *user input*. 
+\*\*Steps 1, 3 and 4 require **user input**. 
 
-### 1. Get data:
+### 1. Get data and calculate [protein]
 
 ```{r get data}
-### USER input: ###
+########################
+### USER input: ########
    # protein extinction coefficient:
-   extcoeff <- 0.481
+   extcoeff <- 0.473
    extcoeff_units <- "L/g"
    
    # protein molecular weight (Da):
-   MW <- 103329.03
+   MW <- 105106
    
    # path to data (csv file):
    results_dir <- "\\\\uniwa.uwa.edu.au\\userhome\\staff7\\00101127\\My Documents\\LLPS results\\centrifuge_assays\\"
-   results_data <- "sfpqQG_CsatSN_data.csv"
+   results_data <- "sfpqWT_CsatSN_data.csv"
    
-   # Data points to exclude (e.g. pipetting errors)?:
+   # Exclude data from serial dilutions (TRUE or FALSE)?
+   exclude_serial <- TRUE
+   
+   # Other data points to exclude (e.g. pipetting errors)?:
       #(must be a vector)
    excluded <- c()
    
 ### (end user input) ###
-
+########################
+   
 # Reads in data: 
 df <- read.csv(paste(results_dir, results_data, sep = ""))
 
@@ -65,39 +75,21 @@ sn_protein_gL <- df_trunc$A280/extcoeff
 sn_protein_uM <- sn_protein_gL/MW*10^6
 df_trunc$sn_protein_uM <- sn_protein_uM
 
-# # Split data into different KCl concentrations:
-# KCl500 <- df_trunc$KCl_mM == 500
-# KCl500 <- df_trunc[KCl500,]
-# KCl150 <- df_trunc$KCl_mM == 150
-# KCl150 <- df_trunc[KCl150,]
-# KCl100 <- df_trunc$KCl_mM == 100
-# KCl100 <- df_trunc[KCl100,]
-# KCl075 <- df_trunc$KCl_mM == 75
-# KCl075 <- df_trunc[KCl075,]
-
 ```
 
-### 2. Plot data:
+### 2. Plot data
 ```{r}
 library(ggplot2)
 
 ggplot(data = df_trunc, mapping = aes(x = sample_uM, y = sn_protein_uM, shape = KCl_mM)) +
    geom_point() +
-   geom_smooth(method = "lm", formula = y ~ x) +
-   xlim(0, 35) +
-   ylim(0, 28)
+   geom_smooth(method = "lm", formula = y ~ x+0) 
+   # xlim(0, 35) +
+   # ylim(0, 28)
 
-# ggplot(data = KCl500, mapping = aes(x = sample_uM, y = sn_protein_uM)) +
-#    geom_point() +
-#    geom_point(data=KCl150, colour='blue') +
-#    geom_point(data=KCl100, colour='green') +
-#    geom_point(data=KCl075, colour='red') +
-#    labs(title = "sfpqQG") +
-#    xlim(0, 35) +
-#    ylim(0, 28)
 ```
 
-### Data Correction
+### 3. Data Correction
 ```{r}
 # Rationale: all input sample concentrations ('sample_uM') are calculated using 
 # stock concentration divided by dilution factor. Stock concentration is very
@@ -105,9 +97,19 @@ ggplot(data = df_trunc, mapping = aes(x = sample_uM, y = sn_protein_uM, shape = 
 # detection limit... this is likely to explain any deviation from 1.0 in 
 # slope of protein dilution series in storage (high salt) buffer...
 
-# Remove data points outside of concentration range of interest:
-trimmer <- df_trunc$sample_uM < 15
-df_trunc2 <- df_trunc[trimmer,]
+########################
+### USER input: ########
+   # Remove data points outside of concentration range of interest:
+   trimmer <- df_trunc$sample_uM < 50
+   df_trunc2 <- df_trunc[trimmer,]
+### (end user input) ###
+########################
+
+if (exclude_serial == TRUE) {
+   # Remove data fom SERIAL DILUTIONS:
+   trimmer <- df_trunc2$dilution_type == "direct"
+   df_trunc2 <- df_trunc2[trimmer,]
+}
 
 # Fit straight line to 500mM data (slope should equal 1:
 KCl500 <- df_trunc2$KCl_mM == 500
@@ -119,45 +121,46 @@ slope500 <- lm500$coefficients[1]
 # Multiply all sample_uM data by the slope of the fit to 500mM data (this should be 1)
 df_trunc2$sample_uM_corrected <- df_trunc2$sample_uM*slope500
 
-
 ```
 
+## *Correction factor = `r slope500`*
+(All [protein] values are multiplied by this)
 
-### 4. Plot Corrected data:
+#### ... plot trimmed and corrected data:
 ```{r}
 library(ggplot2)
 
 ggplot(data = df_trunc2, mapping = aes(x = sample_uM_corrected, y = sn_protein_uM, shape = KCl_mM)) +
-   geom_point() +
-   geom_smooth(method = "lm", formula = y ~ x+0) +
-   xlim(0, 35) +
-   ylim(0, 28)
+   geom_point()
 
 ```
-### Calculate Csat for each [KCl] and indicate on plot:
+
+### 4. Calculate Csat for each [KCl] and indicate on plot
 ```{r}
 # Get all 500mM KCl data:
 get500 <- df_trunc2$KCl_mM == 500
 df_trunc2_500 <- df_trunc2[get500,]
 
-
-# For datapoints with sample_uM_corrected > estimated Csat, calculate average 
-# of all sn_protein_uM values (grouped by [KCl]):
-get150overCsat <- df_trunc2$KCl_mM == 150 & df_trunc2$sample_uM_corrected > 10
-df_trunc2_150overCsat <- df_trunc2[get150overCsat,]
-Csat150 <- mean(df_trunc2_150overCsat$sn_protein_uM)
-Csat150sd <- sd(df_trunc2_150overCsat$sn_protein_uM)
-
-get100overCsat <- df_trunc2$KCl_mM == 100 & df_trunc2$sample_uM_corrected > 3
-df_trunc2_100overCsat <- df_trunc2[get100overCsat,]
-Csat100 <- mean(df_trunc2_100overCsat$sn_protein_uM)
-Csat100sd <- sd(df_trunc2_100overCsat$sn_protein_uM)
-
-get075overCsat <- df_trunc2$KCl_mM == 75 & df_trunc2$sample_uM_corrected > 1
-df_trunc2_075overCsat <- df_trunc2[get075overCsat,]
-Csat075 <- mean(df_trunc2_075overCsat$sn_protein_uM)
-Csat075sd <- sd(df_trunc2_075overCsat$sn_protein_uM)
-
+########################
+### USER input: ########
+   # For datapoints with sample_uM_corrected > estimated Csat, calculate average 
+   # of all sn_protein_uM values (grouped by [KCl]):
+   get150overCsat <- df_trunc2$KCl_mM == 150 & df_trunc2$sample_uM_corrected > 20
+   df_trunc2_150overCsat <- df_trunc2[get150overCsat,]
+   Csat150 <- mean(df_trunc2_150overCsat$sn_protein_uM)
+   Csat150sd <- sd(df_trunc2_150overCsat$sn_protein_uM)
+   
+   get100overCsat <- df_trunc2$KCl_mM == 100 & df_trunc2$sample_uM_corrected > 10
+   df_trunc2_100overCsat <- df_trunc2[get100overCsat,]
+   Csat100 <- mean(df_trunc2_100overCsat$sn_protein_uM)
+   Csat100sd <- sd(df_trunc2_100overCsat$sn_protein_uM)
+   
+   get075overCsat <- df_trunc2$KCl_mM == 75 & df_trunc2$sample_uM_corrected > 3
+   df_trunc2_075overCsat <- df_trunc2[get075overCsat,]
+   Csat075 <- mean(df_trunc2_075overCsat$sn_protein_uM)
+   Csat075sd <- sd(df_trunc2_075overCsat$sn_protein_uM)
+### (end user input) ###
+########################
 
 # library(dplyr)
 
@@ -166,9 +169,9 @@ ggplot(data = df_trunc2, mapping = aes(x = sample_uM_corrected, y = sn_protein_u
    geom_smooth(data = df_trunc2_500, method = "lm", formula = y ~ x+0, se = FALSE) +
    geom_hline(yintercept = Csat150, linetype = "dashed") +
    geom_hline(yintercept = Csat100, linetype = "dashed") +
-   geom_hline(yintercept = Csat075, linetype = "dashed") +
-   xlim(0, 35) +
-   ylim(0, 28)
+   geom_hline(yintercept = Csat075, linetype = "dashed")
+   # xlim(0, 35) +
+   # ylim(0, 28)
 
 ```
 
@@ -181,7 +184,7 @@ df_trunc2_100 <- df_trunc2[get100,]
 Csat100chr <- paste(round(Csat100, digits = 1), "\u00b1", round(Csat100sd, digits = 1), "\u03bcM")
 
 ggplot(data = rbind(df_trunc2_500, df_trunc2_100), mapping = aes(x = sample_uM_corrected, y = sn_protein_uM, group = KCl_mM)) +
-   labs(title = expression(SFPQ(QG)~italic(C)[sat]~by~centrifugation)) +
+   labs(title = expression(SFPQ(WT)~italic(C)[sat]~by~centrifugation), caption = paste("Uncertainty expressed as SD. [protein] correction factor =",round(slope500, digits = 3))) +
    xlab("total [protein] (\u03bcM)") +
    ylab("supernatant [protein] (\u03bcM)") +
    scale_x_continuous(expand = c(0, 0.1)) + 
@@ -193,7 +196,7 @@ ggplot(data = rbind(df_trunc2_500, df_trunc2_100), mapping = aes(x = sample_uM_c
    geom_segment(aes(x = 0, xend = max(df_trunc2_100$sample_uM_corrected), y = Csat100, yend = Csat100), linetype = "dashed") +
    annotate(
       "text",
-      x = max(df_trunc2$sample_uM_corrected)*0.8,
+      x = max(df_trunc2$sample_uM_corrected)*0.75,
       y = Csat100*0.6,
       size = 3,
       label = as.expression(bquote(bold(bolditalic(C)[sat] == .(Csat100chr))))) +
@@ -203,6 +206,7 @@ ggplot(data = rbind(df_trunc2_500, df_trunc2_100), mapping = aes(x = sample_uM_c
          legend.text = element_text(size = 6),
          legend.position = c(0.15,0.85),
          aspect.ratio = 1,
+         plot.caption = element_text(size = 5, colour = "darkgrey")
          )
 
 
@@ -213,7 +217,7 @@ ggplot(data = rbind(df_trunc2_500, df_trunc2_100), mapping = aes(x = sample_uM_c
 
 ### Save plot to file:
 ```{r}
-ggsave(filename = "sfpqQG_CsatSN_100mM_Rplot8x5_300.png", 
+ggsave(filename = "sfpqWT_CsatSN_100mM_Rplot8x8_300.png", 
        plot = last_plot(), 
        device = "png", 
        path = results_dir, 

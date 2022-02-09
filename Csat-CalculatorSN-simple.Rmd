@@ -1,0 +1,180 @@
+---
+title: "Calculate Csat (centrifuge data)"
+subtitle: "Data = EC_sfpqWT_CsatSN_GOODdata.csv"
+author: "Andrew Marshall"
+date: "09/02/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Overview:
+
+This program:
+
+1. Reads data collected using centrifuge method for protein saturation 
+concentration determination. Converts supernatant A280 readings to [protein]. **
+
+2. Plots supernatant [protein] over the total protein concentration.
+
+3. Calculates saturation concentration (Csat) by taking mean supernatant [protein] 
+of points with total [protein] greater than user-estimated Csat. **
+
+4. Creates plots with horizontal line(s) to indicate Csat and data points as 
+average +/- sd.
+
+
+\*\*Steps 1 and 3 require **user input**. 
+
+### 1. Get data and calculate [protein]
+
+```{r get data}
+########################
+### USER input: ########
+   # protein extinction coefficient:
+   extcoeff <- 0.473
+   extcoeff_units <- "L/g"
+   
+   # protein molecular weight (Da):
+   MW <- 105206
+   
+   # path to data (csv file):
+   results_dir <- "\\\\uniwa.uwa.edu.au\\userhome\\staff7\\00101127\\My Documents\\LLPS results\\centrifuge_assays\\"
+   results_data <- "EC_sfpqWT_CsatSN_GOODdata.csv"
+   
+### (end user input) ###
+########################
+   
+# Reads in data: 
+df <- read.csv(paste(results_dir, results_data, sep = ""))
+
+# Sort by KCl concentration and convert KCl_mM to factor:
+df <- df[order(df$KCl_mM),]
+df$KCl_mM <- as.factor(df$KCl_mM)
+
+# Converts A280 to [protein] (micromolar):
+sn_protein_gL <- df$A280/extcoeff
+sn_protein_uM <- sn_protein_gL/MW*10^6
+df$sn_protein_uM <- sn_protein_uM
+
+```
+
+### 2. Plot data
+```{r}
+library(ggplot2)
+
+ggplot(data = df, mapping = aes(x = sample_uM, y = sn_protein_uM, shape = KCl_mM)) +
+   geom_point()
+   # geom_smooth(method = "lm", formula = y ~ x+0) 
+   # xlim(0, 35) +
+   # ylim(0, 28)
+
+```
+
+### 3. Calculate Csat for each [KCl] and indicate on plot
+```{r}
+# Get all 500mM KCl data:
+get500 <- df$KCl_mM == 500
+df_500 <- df[get500,]
+
+########################
+### USER input: ########
+   # For datapoints with sample_uM > estimated Csat, calculate average, SD and
+   # 95% CI of sn_protein_uM value (grouped by [KCl]):
+   estimated_Csat <- 2
+   get150overCsat <- df$KCl_mM == 150 & df$sample_uM > estimated_Csat
+   df_150overCsat <- df[get150overCsat,]
+   N_observations <- as.numeric(nrow(df_150overCsat))
+   Csat150 <- mean(df_150overCsat$sn_protein_uM)
+   Csat150sd <- sd(df_150overCsat$sn_protein_uM)
+   Csat150ci <- 1.96*(Csat150sd/sqrt(N_observations))
+   
+### (end user input) ###
+########################
+
+# library(dplyr)
+
+ggplot(data = df, mapping = aes(x = sample_uM, y = sn_protein_uM, shape = KCl_mM)) +
+   geom_point() +
+   geom_smooth(data = df_500, method = "lm", formula = y ~ x+0, se = FALSE) +
+   geom_hline(yintercept = Csat150, linetype = "dashed") +
+   xlim(0, 1.1*max(df$sample_uM)) +
+   ylim(0, 1.1*max(sn_protein_uM))
+
+```
+
+### 4. Create annotated plot with error bars: 
+```{r}
+# Collapse data to create new dataframe with mean and SD of observations
+# (sn_protein_uM) grouped by KCl_uM + sample_uM:
+library(doBy)
+
+df_collapse <- summaryBy(sn_protein_uM ~ KCl_mM + sample_uM, 
+                         data = df, 
+                         FUN = c(length, mean, sd))
+# Rename columns:
+names(df_collapse)[names(df_collapse)=="sn_protein_uM.length"] <- "N"
+names(df_collapse)[names(df_collapse)=="sn_protein_uM.mean"] <- "sn_protein_uM"
+names(df_collapse)[names(df_collapse)=="sn_protein_uM.sd"] <- "sd"
+
+
+# Convert Csat150 to string (for plot label):
+Csat150chr <- paste(round(Csat150, digits = 1), "\u00b1", round(Csat150ci, digits = 1), "\u03bcM")
+
+ggplot(data = df_collapse, mapping = aes(x = sample_uM, y = sn_protein_uM, group = KCl_mM)) +
+   # labs(title = expression(SFPQ(WT)~italic(C)[sat]~by~centrifugation), caption = "Error bars are SD (n = 3). Csat uncertainty expressed as 95% CI.") +
+   xlab("total [protein] (\u03bcM)") +
+   ylab("supernatant [protein] (\u03bcM)") +
+   # scale_x_continuous(expand = c(0, 0.0)) + 
+   # scale_y_continuous(expand = c(0, 0.0)) +
+   xlim(0, NA) +
+   ylim(0, NA) +
+   geom_point(aes(shape = KCl_mM), size = 1.5) +
+   scale_shape_manual(values=c(1, 16),
+                      name = "[KCl] (mM)") +
+   geom_errorbar(aes(ymin=sn_protein_uM-sd, ymax=sn_protein_uM+sd), width=max(df$sample_uM*0.04)) +
+   # geom_smooth(data = df_trunc2_500, method = "lm", formula = y ~ x+0, se = FALSE, colour = "black", size = 0.5) +
+   geom_segment(aes(x = 0, xend = max(df$sample_uM), y = Csat150, yend = Csat150),
+                linetype = "dashed",
+                color = "darkred") +
+   annotate(
+      "text",
+      x = max(df$sample_uM)*0.7,
+      y = Csat150*0.5,
+      size = 3,
+      # label = as.expression(bquote(bold(bolditalic(C)[sat] == .(Csat150chr))))) +
+      label = as.expression(bquote(bold(.(Csat150chr)))),
+      color = "darkred") +
+   theme_classic(base_size = 9) +
+   theme(legend.key.size = unit(4, "mm"),
+         legend.title = element_text(size = 7),
+         legend.text = element_text(size = 7),
+         legend.position = c(0.2,0.8),
+         aspect.ratio = 1,
+         plot.caption = element_text(size = 5, colour = "darkgrey")
+         )
+```
+
+
+
+### Save plot to file:
+```{r}
+ggsave(filename = "ECsfpqWT_CsatSN_150mM_Rplot5x5_300.png", 
+       plot = last_plot(), 
+       device = "png", 
+       path = results_dir, 
+       scale = 1,
+       width = 5,
+       height = 5,
+       units = "cm",
+       dpi = 300,
+       limitsize = TRUE,
+       bg = NULL)
+```
+
+
+
+### Conclusions...
+

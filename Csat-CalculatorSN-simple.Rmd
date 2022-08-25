@@ -1,8 +1,8 @@
 ---
 title: "Calculate Csat (centrifuge data)"
-subtitle: "Data = EC_sfpqWT_CsatSN_GOODdata.csv"
+subtitle: "Data = EC_sfpq276-598notag_CsatSN_data.csv"
 author: "Andrew Marshall"
-date: "09/02/2022"
+date: "05/07/2022"
 output: html_document
 ---
 
@@ -23,7 +23,7 @@ concentration determination. Converts supernatant A280 readings to [protein]. **
 of points with total [protein] greater than user-estimated Csat. **
 
 4. Creates plots with horizontal line(s) to indicate Csat and data points as 
-average +/- sd.
+average +/- 95% CI.
 
 
 \*\*Steps 1 and 3 require **user input**. 
@@ -34,15 +34,19 @@ average +/- sd.
 ########################
 ### USER input: ########
    # protein extinction coefficient:
-   extcoeff <- 0.473
+   extcoeff <- 0.454
    extcoeff_units <- "L/g"
    
    # protein molecular weight (Da):
-   MW <- 105206
+   MW <- 38340.32
    
    # path to data (csv file):
    results_dir <- "\\\\uniwa.uwa.edu.au\\userhome\\staff7\\00101127\\My Documents\\LLPS results\\centrifuge_assays\\"
-   results_data <- "EC_sfpqWT_CsatSN_GOODdata.csv"
+   results_data <- "EC_sfpq276-598notag_CsatSN_data.csv"
+   
+   # Include data from certain date(s) only?...
+   date_of_experiment <- "na"
+   # date_of_experiment <- "29.06.2022"
    
 ### (end user input) ###
 ########################
@@ -50,6 +54,13 @@ average +/- sd.
 # Reads in data: 
 df <- read.csv(paste(results_dir, results_data, sep = ""))
 
+# Include data from certain date(s) only:
+   if (date_of_experiment=="na"){
+      df <- df
+   } else {
+      df <- df[df$date==date_of_experiment,]
+   }
+   
 # Sort by KCl concentration and convert KCl_mM to factor:
 df <- df[order(df$KCl_mM),]
 df$KCl_mM <- as.factor(df$KCl_mM)
@@ -83,7 +94,7 @@ df_500 <- df[get500,]
 ### USER input: ########
    # For datapoints with sample_uM > estimated Csat, calculate average, SD and
    # 95% CI of sn_protein_uM value (grouped by [KCl]):
-   estimated_Csat <- 2
+   estimated_Csat <- 400
    get150overCsat <- df$KCl_mM == 150 & df$sample_uM > estimated_Csat
    df_150overCsat <- df[get150overCsat,]
    N_observations <- as.numeric(nrow(df_150overCsat))
@@ -142,7 +153,7 @@ ggplot(data = df_collapse, mapping = aes(x = sample_uM, y = sn_protein_uM, group
    annotate(
       "text",
       x = max(df$sample_uM)*0.7,
-      y = Csat150*0.5,
+      y = Csat150*0.05,
       size = 3,
       # label = as.expression(bquote(bold(bolditalic(C)[sat] == .(Csat150chr))))) +
       label = as.expression(bquote(bold(.(Csat150chr)))),
@@ -152,6 +163,7 @@ ggplot(data = df_collapse, mapping = aes(x = sample_uM, y = sn_protein_uM, group
          legend.title = element_text(size = 7),
          legend.text = element_text(size = 7),
          legend.position = c(0.2,0.8),
+         legend.background = element_blank(),
          aspect.ratio = 1,
          plot.caption = element_text(size = 5, colour = "darkgrey")
          )
@@ -161,7 +173,7 @@ ggplot(data = df_collapse, mapping = aes(x = sample_uM, y = sn_protein_uM, group
 
 ### Save plot to file:
 ```{r}
-ggsave(filename = "ECsfpqWT_CsatSN_150mM_Rplot5x5_300.png", 
+ggsave(filename = paste(results_data, "_Rplot5x5_300.png"), 
        plot = last_plot(), 
        device = "png", 
        path = results_dir, 

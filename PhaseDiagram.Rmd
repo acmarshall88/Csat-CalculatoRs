@@ -1,0 +1,232 @@
+---
+title: "Calculate Csat and condensed phase [protein]"
+subtitle: "Data = 20230421_ECsfpqWTcleaved_pheno/5hr/10x/GFP"
+author: "Andrew Marshall"
+date: "15/06/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Overview:
+
+This program:
+
+1. Takes data from Drop_Counter.ijm **
+
+2. Plots the *total condensed protein volume* over the *total protein concentration*
+
+3. Fits a straight line to points at [protein] > saturation concentration **
+
+4. Calculates saturation concentration (Csat = x-intercept)
+
+5. Calculates [protein] within condensed phase ** (*only accurate if condensed phase volume has been measured accurately*)
+
+
+\*\*Steps 1, 3 and 5 require *user input*. 
+
+### 1. Get data:
+
+```{r get data}
+### USER input: ###
+results_dir <- "\\\\uniwa.uwa.edu.au\\userhome\\staff7\\00101127\\My Documents\\LLPS results\\20230421_ECsfpqWTcleaved_pheno\\5hr\\10x\\GFP\\"
+df <- read.csv(paste(results_dir, "Method#2 (calculate total condensed volume).csv", sep = ""))
+```
+
+### 2. Plot data:
+
+```{r plot, echo=TRUE}
+library(ggplot2)
+ggplot(data = df, mapping = aes(x = Protein_Conc_uM, y = Cond_Vol_in_sample_nL)) +
+   geom_point() +
+   labs(title = "SFPQ FL 21/4/2023")
+```
+
+### 3/4 Do linear fit & calculate saturation concentration ('Csat'):
+
+```{r}
+### USER INPUT: ###
+   # Write an estimate of the Csat here (only data points to the right of this will be used in linear fit):
+   Csat_approx <- 10
+
+   # Other points to exclude (e.g. outliers)?:
+      #(must be a vector)
+   excluded <- c(9)
+### (end user input) ###
+
+# Truncate results table to include only data > Csat and exclude any other user-specified points...
+if (length(excluded) >= 1) {
+   df_trunc <- df[-excluded,]
+} else {
+   df_trunc <- df
+}
+   
+rows_to_keep <- df_trunc$Protein_Conc_uM > Csat_approx
+df_trunc <- df_trunc[rows_to_keep,]
+
+
+cond_vol <- df_trunc$Cond_Vol_in_sample_nL
+prot_conc <- as.numeric(df_trunc$Protein_Conc_uM)
+
+# (3) Do linear fit...
+model_linear <- lm(cond_vol ~ prot_conc)
+summary(model_linear)
+
+slope <- summary(model_linear)$coefficients[2,1]
+yint <- summary(model_linear)$coefficients[1,1]
+
+# (4) Find x-intercept (Csat)...
+# 0 = mx + c ... x = -c/m
+Csat <- round(-yint/slope,2)
+
+
+
+########### - ADDING ERROR BARS - #############
+# Collapse data to create new dataframe with mean and SD of observations
+# (sn_protein_uM) grouped by KCl_uM + sample_uM:
+library(doBy)
+
+df_collapse <- summaryBy(Cond_Vol_in_sample_nL ~ Protein_Conc_uM, 
+                         data = df, 
+                         FUN = c(length, mean, sd))
+# Rename columns:
+names(df_collapse)[names(df_collapse)=="Cond_Vol_in_sample_nL.length"] <- "N"
+names(df_collapse)[names(df_collapse)=="Cond_Vol_in_sample_nL.mean"] <- "Cond_Vol_in_sample_nL"
+names(df_collapse)[names(df_collapse)=="Cond_Vol_in_sample_nL.sd"] <- "sd"
+###############################################
+
+# Convert Csat to string (for plot label):
+Csat_label <- paste(round(Csat, digits = 1), "\u03bcM", sep = " ")
+
+plt_Csat <- 
+ggplot(data = df_collapse, mapping = aes(x = Protein_Conc_uM, y = Cond_Vol_in_sample_nL)) +
+   # theme(text = element_text(size=20)) +
+   geom_point(size = 1.5) +
+   geom_errorbar(aes(ymin=Cond_Vol_in_sample_nL-sd, ymax=Cond_Vol_in_sample_nL+sd), 
+                 width=max(df$Protein_Conc_uM*0.04)) +
+   # labs(title = "H6-mEGFP-SFPQ condensation",
+   #      subtitle = "150 mM KCl, 20 mM HEPES pH 7.4\n(room temperature)") +
+   xlab("total [protein] (\u03bcM)") +
+   ylab("Condensed Vol (nL)") +
+   # theme(
+      # plot.title = element_text(size = 20, face = "bold.italic"),
+      # plot.subtitle = element_text(size = 14, face = "italic"),
+      # axis.title.x = element_text(size = 17),
+      # axis.title.y = element_text(size = 17)
+      # ) +
+   stat_function(data = df_trunc, fun = function(prot_conc) slope*prot_conc + yint) +
+   ylim(0, max(df_trunc$Cond_Vol_in_sample_nL)) +
+   xlim(0, max(df_trunc$Protein_Conc_uM)*1.05) +
+   geom_segment(aes(x = Csat, 
+                    y = 0, 
+                    xend = Csat,
+                    yend = max(df_trunc$Cond_Vol_in_sample_nL)/2.2),
+                linetype = "dashed",
+                color = "darkred") +
+   annotate(
+      "text",
+      x = Csat,
+      y = max(df_trunc$Cond_Vol_in_sample_nL)/2,
+      size = 3,
+      label = as.expression(bquote(bold(.(Csat_label)))),
+      color = "darkred") +
+
+   # geom_label(
+      # label = paste("C(sat) = ", Csat, " uM", sep = ""),
+
+      # x = Csat,
+      # y = max(df_trunc$Cond_Vol_in_sample_nL)/2,
+      # size = 6,
+      # colour = "darkred"
+      # ) +
+   theme_classic(base_size = 9) +
+   theme(aspect.ratio=1)
+
+plt_Csat
+
+```
+### Save plot to file:
+```{r}
+ggsave(filename = paste("Rplot5x5_300.png"), 
+       plot = last_plot(), 
+       device = "png", 
+       path = results_dir, 
+       scale = 1,
+       width = 5,
+       height = 5,
+       units = "cm",
+       dpi = 300,
+       limitsize = TRUE,
+       bg = NULL)
+```
+
+
+### 5. Calculate [protein] within condensed phase:
+
+```{r}
+### USER INPUT: ###
+   # Total volume (in uL) of each sample here:
+   sample_vol_uL <- 14
+
+   # Protein MW (in Daltons):
+   prot_mw <- 76277
+   
+### (end user input) ###
+
+
+c_tot <- df_trunc$Protein_Conc_uM*10^-6     # <-Total [protein] (M)
+v_tot <- sample_vol_uL*10^-6                # <-Sample Volume (L)
+
+v_cond <- df_trunc$Cond_Vol_in_sample_nL*10^-9  # <-Condensed Vol (L)
+
+c_dil <- Csat*10^-6                         # <-Dilute phase [protein] (M)
+v_dil <- v_tot - v_cond                     # <-Dilute phase Vol (L)
+
+# [protein] in condensed phase (c_cond) equals:
+   # moles in the condensed phase (n_cond)
+      # divided by
+   # volume of condensed phase (v_cond)...
+      
+# Therefore, if
+   # n_cond = n_tot - n_dil
+   #        = c_tot*v_tot - c_dil*v_dil
+
+# then,
+   # c_cond = (c_tot*v_tot - c_dil*v_dil) / v_cond
+
+# Calculate vector containing c_cond for each sample in df_trunc...
+c_cond_M <- (c_tot*v_tot - c_dil*v_dil) / v_cond
+c_cond_gL <- c_cond_M*prot_mw
+
+# Append to df_trunc...
+df_trunc$c_cond_M <- c_cond_M
+df_trunc$c_cond_gL <- c_cond_gL
+
+# Fit horizontal line...
+model_c_cond <- nls(formula = c_cond_M ~ c_cond_M_fit,
+                    data = df_trunc,
+                    start = list(c_cond_M_fit=mean(df_trunc$c_cond_M)))
+summary(model_c_cond)
+
+c_cond_M_fit <- summary(model_c_cond)$coefficients[1,1]
+c_cond_gL_fit <- c_cond_M_fit*prot_mw
+
+ggplot(data = df_trunc, mapping = aes(x = Protein_Conc_uM, y = c_cond_M)) +
+   theme(text = element_text(size=20)) +
+   geom_point() +
+   stat_function(fun = function(Protein_Conc_uM) c_cond_M_fit) +
+   scale_y_continuous(
+      name = "protein concentration (M)",
+      sec.axis = sec_axis(trans = ~.*prot_mw, name = "mg/mL"),
+      limits = c(0, max(c_cond_M))) +
+   labs(title = paste("[protein] in condensed phase is ~ ", round(c_cond_gL_fit), " mg/mL", sep = "")) +
+   xlab(expression(paste("Total protein concentration (", mu, "M)", sep = ""))) +
+   theme(plot.title = element_text(size = 18, face = "bold.italic"),
+         axis.title.x = element_text(size = 17),
+         axis.title.y = element_text(size = 17)) +
+   theme(aspect.ratio=0.6)
+
+```
+

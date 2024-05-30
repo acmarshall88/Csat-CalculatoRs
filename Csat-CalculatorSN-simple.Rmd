@@ -1,8 +1,8 @@
 ---
 title: "Calculate Csat (centrifuge data)"
-subtitle: "Data = EC_sfpq276-598notag_CsatSN_data.csv"
+subtitle: "Data = EC_sfpq276-707notag_CsatSN_gooddata.csv"
 author: "Andrew Marshall"
-date: "05/07/2022"
+date: "na"
 output: html_document
 ---
 
@@ -34,15 +34,15 @@ average +/- 95% CI.
 ########################
 ### USER input: ########
    # protein extinction coefficient:
-   extcoeff <- 0.454
+   extcoeff <- 0.504
    extcoeff_units <- "L/g"
    
    # protein molecular weight (Da):
-   MW <- 38340.32
+   MW <- 49340.65
    
    # path to data (csv file):
-   results_dir <- "\\\\uniwa.uwa.edu.au\\userhome\\staff7\\00101127\\My Documents\\LLPS results\\centrifuge_assays\\"
-   results_data <- "EC_sfpq276-598notag_CsatSN_data.csv"
+   results_dir <- "C:\\Users\\00101127\\OneDrive - The University of Western Australia\\Documents\\LLPS results\\centrifuge_assays\\"
+   results_data <- "EC_sfpq276-707notag_CsatSN_gooddata.csv"
    
    # Include data from certain date(s) only?...
    date_of_experiment <- "na"
@@ -94,7 +94,7 @@ df_500 <- df[get500,]
 ### USER input: ########
    # For datapoints with sample_uM > estimated Csat, calculate average, SD and
    # 95% CI of sn_protein_uM value (grouped by [KCl]):
-   estimated_Csat <- 400
+   estimated_Csat <- 1
    get150overCsat <- df$KCl_mM == 150 & df$sample_uM > estimated_Csat
    df_150overCsat <- df[get150overCsat,]
    N_observations <- as.numeric(nrow(df_150overCsat))
@@ -134,7 +134,14 @@ names(df_collapse)[names(df_collapse)=="sn_protein_uM.sd"] <- "sd"
 # Convert Csat150 to string (for plot label):
 Csat150chr <- paste(round(Csat150, digits = 1), "\u00b1", round(Csat150ci, digits = 1), "\u03bcM")
 
-ggplot(data = df_collapse, mapping = aes(x = sample_uM, y = sn_protein_uM, group = KCl_mM)) +
+
+
+# Create a data frame to map KCl_mM to colors
+# color_mapping <- data.frame(KCl_mM = unique(df_collapse$KCl_mM), color = c("darkred", "black"))
+
+
+
+ggplot(data = df_collapse, mapping = aes(x = sample_uM, y = sn_protein_uM, group = KCl_mM, color = KCl_mM)) +
    # labs(title = expression(SFPQ(WT)~italic(C)[sat]~by~centrifugation), caption = "Error bars are SD (n = 3). Csat uncertainty expressed as 95% CI.") +
    xlab("total [protein] (\u03bcM)") +
    ylab("supernatant [protein] (\u03bcM)") +
@@ -142,9 +149,17 @@ ggplot(data = df_collapse, mapping = aes(x = sample_uM, y = sn_protein_uM, group
    # scale_y_continuous(expand = c(0, 0.0)) +
    xlim(0, NA) +
    ylim(0, NA) +
-   geom_point(aes(shape = KCl_mM), size = 1.5) +
-   scale_shape_manual(values=c(1, 16),
-                      name = "[KCl] (mM)") +
+   geom_point(aes(shape = factor(KCl_mM)), 
+              size = 2,
+              alpha = 0.5) +
+
+   # scale_shape_manual(values = unique(df_collapse$KCl_mM), labels = color_mapping$KCl_mM) +
+ 
+   scale_shape_manual(values=c(2, 16),
+                      name = "KCl (mM)") +
+   # scale_color_manual(values = color_mapping$color) +
+   scale_color_manual(values = c("darkred", "black")) +
+   guides(color = "none") +                     # to remove colour legend
    geom_errorbar(aes(ymin=sn_protein_uM-sd, ymax=sn_protein_uM+sd), width=max(df$sample_uM*0.04)) +
    # geom_smooth(data = df_trunc2_500, method = "lm", formula = y ~ x+0, se = FALSE, colour = "black", size = 0.5) +
    geom_segment(aes(x = 0, xend = max(df$sample_uM), y = Csat150, yend = Csat150),
@@ -154,18 +169,20 @@ ggplot(data = df_collapse, mapping = aes(x = sample_uM, y = sn_protein_uM, group
       "text",
       x = max(df$sample_uM)*0.7,
       y = Csat150*0.05,
-      size = 3,
+      size = 4,
       # label = as.expression(bquote(bold(bolditalic(C)[sat] == .(Csat150chr))))) +
       label = as.expression(bquote(bold(.(Csat150chr)))),
       color = "darkred") +
    theme_classic(base_size = 9) +
    theme(legend.key.size = unit(4, "mm"),
-         legend.title = element_text(size = 7),
-         legend.text = element_text(size = 7),
+         legend.title = element_text(size = 9),
+         legend.text = element_text(size = 9),
          legend.position = c(0.2,0.8),
          legend.background = element_blank(),
          aspect.ratio = 1,
-         plot.caption = element_text(size = 5, colour = "darkgrey")
+         plot.caption = element_text(size = 5, colour = "darkgrey"),
+         axis.title = element_blank(),
+         axis.text = element_text(size = 7.5)
          )
 ```
 
